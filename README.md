@@ -8,7 +8,7 @@ Django와 FastAPI를 분리한 구조로 구현했습니다.
 
 - **Django**: 사용자 화면, 입력 검증, 요청 저장, API 호출 흐름 제어, 결과 화면 출력
 - **FastAPI Proxy**: Guardrail 검사, 요청 유형 분류, SSAFY GMS API 호출, 텍스트·이미지 응답 처리
-- **SSAFY GMS**: 텍스트 생성 및 Gemini 이미지 생성 모델 제공
+- **SSAFY GMS**: 텍스트 생성, Gemini 이미지 생성, 음성 변환(TTS) 모델 제공
 
 ## 2. 주요 기능
 
@@ -24,6 +24,15 @@ Django와 FastAPI를 분리한 구조로 구현했습니다.
 | **F706. 오류 처리** | GMS 연결·호출 및 응답 처리 오류를 FastAPI의 HTTP 503으로 전달하고, Django에서 오류 안내 화면을 표시합니다. 부적절한 요청의 HTTP 403은 거절 화면으로 처리합니다. |
 | **F707. 이미지 분석** | 업로드한 책 표지 이미지를 Base64로 변환해 FastAPI에 전달합니다. 모델이 표지의 제목·저자·장르·분위기를 분석하고 유사 도서를 제안합니다. |
 | **F708. API 흐름 제어** | Django가 라우트 결정 결과에 따라 텍스트 추천 또는 이미지 생성 API를 호출하고, 결과를 해당 화면에 출력합니다. |
+
+### 심화 기능
+
+| 기능 | 설명 |
+|---|---|
+| **F709. 텍스트 응답 점수 계산** | FastAPI `/chat/score`가 사용자 요청과 추천 답변을 받아 적합도 점수(0~100)와 이유를 JSON Schema 응답으로 반환합니다. Django는 추천 생성 직후 이 API를 호출해 `Recommendation`의 `score`, `reason`에 저장하고 결과 화면에 표시합니다. 점수 계산이 실패해도 추천 결과는 그대로 표시합니다. |
+| **F710. 모델 등급 라우팅** | 입력 화면의 체크박스를 켜면 `gpt-5-nano`가 요청을 `simple` 또는 `complex`로 분류합니다. `simple`은 `gpt-5-nano`, `complex`는 `gpt-5-mini`로 추천을 생성하고, 실제 사용한 모델명을 `model_used`로 반환해 화면에 표시합니다. 체크하지 않으면 기존처럼 `gpt-5-nano`만 사용합니다. |
+| **F711. TTS 기능 구현** | FastAPI `/generate-speech`가 텍스트를 `gpt-4o-mini-tts`(voice: `nova`, mp3)로 변환하고 오디오를 Base64 문자열로 반환합니다. Django `tts` 뷰와 `SpeechForm`, `Speech` 모델을 새로 작성했으며, 오디오는 파일로 저장하지 않고 `<audio>` 태그의 data URI로 바로 재생합니다. 추천 결과 화면의 "음성으로 듣기" 버튼으로도 사용할 수 있습니다. |
+| **F712. 이미지 미디어 서빙** | FastAPI가 전달한 Base64 이미지를 Django가 디코딩해 `media/images/`에 파일로 저장하고, `MEDIA_URL` 주소(`/media/images/<uuid>.<확장자>`)로 화면에 제공합니다. 이미지 MIME 타입에 맞춰 확장자를 정하며, 저장에 실패하면 Base64 인라인 표시로 대체합니다. |
 
 ### 필수 비기능 요구사항
 
@@ -58,7 +67,15 @@ Django Web
   │    ├─ 이미지 요청 ───────► GMS Interactions
   │    │                         └─ Gemini 이미지 모델
   │    │
-  │    └─ 이미지 분석 요청 ──► GMS Chat Completions
+  │    ├─ 이미지 분석 요청 ──► GMS Chat Completions
+  │    │
+  │    ├─ F709: 답변 점수 계산 ─► GMS Chat Completions
+  │    │
+  │    ├─ F710: 모델 등급 판단 ─► gpt-5-nano → (gpt-5-nano | gpt-5-mini)
+  │    │
+  │    └─ F711: 음성 변환 ───► GMS Audio Speech (TTS)
+  │
+  ├─ F712: 생성 이미지를 media 폴더에 저장 후 URL로 제공
   │
   ▼
 Django 결과 화면
@@ -73,6 +90,8 @@ Django 결과 화면
 | POST | `/api/v1/decide-route` | 텍스트/이미지 라우트 결정 |
 | POST | `/api/v1/images/generations` | Gemini 이미지 생성 |
 | POST | `/api/v1/images/analysis` | 업로드 이미지 분석 |
+| POST | `/api/v1/chat/score` | 추천 답변 점수 계산 (심화) |
+| POST | `/api/v1/generate-speech` | 텍스트 음성 변환 (심화) |
 
 FastAPI 기본 주소는 `http://127.0.0.1:8081`이며, API 문서는 `http://127.0.0.1:8081/docs`에서 확인할 수 있습니다.
 
@@ -85,6 +104,8 @@ FastAPI 기본 주소는 `http://127.0.0.1:8081`이며, API 문서는 `http://12
 | AI Model API | SSAFY GMS |
 | Text / Guardrail / Route Model | `gpt-5-nano` |
 | Image Generation Model | `gemini-3.1-flash-lite-image` |
+| 고성능 텍스트 Model (심화) | `gpt-5-mini` |
+| TTS Model (심화) | `gpt-4o-mini-tts` |
 | HTTP 통신 | Requests |
 | 데이터베이스 | SQLite |
 | 입력 검증 | Django ModelForm, Pydantic |
@@ -102,7 +123,12 @@ FastAPI 기본 주소는 `http://127.0.0.1:8081`이며, API 문서는 `http://12
 │   ├── F704.png
 │   ├── F705.png
 │   ├── F707.png
-│   └── F708.png
+│   ├── F708.png
+│   ├── F709.png
+│   ├── F710_nano.png
+│   ├── F710_mini.png
+│   ├── F711.png
+│   └── F712.png
 ├── server/
 │   ├── proxy/
 │   │   ├── main.py
@@ -176,8 +202,11 @@ GMS_URL=https://gms.ssafy.io/gmsapi/api.openai.com/v1
 
 ```bash
 cd server/web
+python manage.py makemigrations
 python manage.py migrate
 ```
+
+> 심화 기능(F711)에서 `Speech` 모델이 추가되었으므로 `makemigrations`로 마이그레이션 파일을 생성한 뒤 `migrate`를 실행합니다.
 
 ### 6-5. FastAPI Proxy 실행
 
@@ -236,6 +265,26 @@ python manage.py runserver
 
 ![F708 API 흐름 제어](img/F708.png)
 
+### F709. 텍스트 응답 점수 계산 (심화)
+
+![F709 텍스트 응답 점수 계산](img/F709.png)
+
+### F710. 모델 등급 라우팅 (심화)
+
+간단한 요청은 `gpt-5-nano`, 복잡한 요청은 `gpt-5-mini`가 사용됩니다.
+
+![F710 간단한 요청 - gpt-5-nano](img/F710_nano.png)
+
+![F710 복잡한 요청 - gpt-5-mini](img/F710_mini.png)
+
+### F711. TTS 기능 구현 (심화)
+
+![F711 TTS](img/F711.png)
+
+### F712. 이미지 미디어 서빙 (심화)
+
+![F712 이미지 미디어 서빙](img/F712.png)
+
 ## 8. 테스트 시나리오
 
 | 테스트 | 입력 예시 | 기대 결과 |
@@ -248,6 +297,11 @@ python manage.py runserver
 | 이미지 생성 | 소설 표지 이미지 생성 요청 | 생성된 이미지 출력 |
 | 이미지 분석 | 책 표지 업로드 및 분석 질문 | 표지 분석 결과 출력 |
 | API 흐름 제어 | 텍스트 추천/이미지 생성 요청 각각 입력 | 요청 유형에 맞는 API 자동 호출 |
+| 점수 계산 (심화) | `잠들기 전에 읽기 좋은 따뜻한 에세이를 추천해줘` | 추천 결과 아래에 점수와 이유 표시 |
+| 모델 등급 라우팅 - 간단 (심화) | 체크박스 ON, `소설 추천해줘` | 사용된 모델 `gpt-5-nano` |
+| 모델 등급 라우팅 - 복잡 (심화) | 체크박스 ON, `비 오는 날 혼자 읽기 좋은, 위로가 되는 짧은 에세이` | 사용된 모델 `gpt-5-mini` |
+| TTS (심화) | TTS 메뉴에서 텍스트 입력 후 변환 | 오디오 플레이어 표시 및 음성 재생 |
+| 이미지 미디어 서빙 (심화) | 소설 표지 이미지 생성 요청 | `server/web/media/images/`에 파일 생성, 화면에 `/media/images/….` 주소 표시 |
 
 ## 9. 보안 및 예외 처리
 
@@ -269,6 +323,10 @@ python manage.py runserver
 - **Guardrail**: AI 모델에 요청을 전달하기 전에 입력의 적절성을 검사하고, 부적절한 요청을 차단하는 과정을 구현했습니다.
 - **이미지 데이터 처리**: Base64 인코딩을 활용해 이미지를 API로 전달하고, 생성된 이미지 데이터를 웹 화면에 출력하는 방법을 익혔습니다.
 - **예외 및 보안 처리**: 환경변수로 API Key를 관리하고, CSRF 보호와 요청 timeout을 적용하는 방법을 학습했습니다.
+- **LLM 응답 평가**: 추천 답변을 다시 LLM에 전달해 점수와 이유를 구조화된 JSON으로 받는 방법을 익혔습니다. strict JSON Schema는 최솟값·최댓값을 지정할 수 없어 서버 코드에서 0~100 범위로 보정했습니다.
+- **모델 등급 라우팅**: 비용이 적은 모델이 요청 난이도를 먼저 판단하고, 그 결과에 따라 생성 모델을 고르는 방식으로 비용과 품질을 함께 고려하는 방법을 학습했습니다.
+- **멀티모달 기능 추가**: FastAPI 엔드포인트부터 Django 폼, 뷰, 템플릿까지 TTS 기능 하나를 처음부터 추가하며 전체 흐름을 직접 구성했습니다.
+- **인라인 방식과 파일 서빙의 차이**: 작고 일회성인 오디오는 data URI로 바로 재생하고, 크고 다시 쓰는 이미지는 media 폴더에 저장해 URL로 제공하는 기준을 이해했습니다.
 
 ## 11. 느낀 점
 
@@ -278,4 +336,6 @@ python manage.py runserver
 
 특히 Django와 FastAPI를 분리하면서 서버 간 데이터 전달과 API 호출 흐름을 설계하는 과정이 쉽지만은 않았습니다. 하지만 문제를 하나씩 해결하면서 전체 서비스의 구조를 이해할 수 있었습니다.
 
-이번 경험을 통해 새로운 기술을 사용하는 것뿐만 아니라, 여러 기술을 연결해 하나의 서비스로 완성하는 과정의 중요성을 배웠습니다. 앞으로도 사용자의 요구사항을 정확하게 파악하고, 안정적이고 사용하기 편리한 서비스를 설계할 수 있는 개발자로 성장하고 싶습니다.
+이번 경험을 통해 새로운 기술을 사용하는 것뿐만 아니라, 여러 기술을 연결해 하나의 서비스로 완성하는 과정의 중요성을 배웠습니다. 심화 기능을 구현하면서는 같은 추천 기능이라도 비용, 품질, 사용자 경험을 함께 고려해야 한다는 점을 느꼈습니다. 요청 난이도에 따라 모델을 나누고, 답변에 점수를 붙이고, 음성과 이미지 파일까지 다루면서 AI 기능을 서비스로 완성하려면 모델 호출 외에도 많은 설계가 필요하다는 것을 배웠습니다.
+
+앞으로도 사용자의 요구사항을 정확하게 파악하고, 안정적이고 사용하기 편리한 서비스를 설계할 수 있는 개발자로 성장하고 싶습니다.
