@@ -7,4 +7,5 @@ urlpatterns = [
     path("", views.recommend_form, name="input"),
     path("flow/", views.recommend_flow, name="flow"),
     path("upload/", views.image_analysis, name="upload"),
+    path("tts/", views.tts, name="tts"),
 ]

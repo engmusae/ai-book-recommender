@@ -1,11 +1,15 @@
 
 import base64
+import binascii
+import uuid
+
 import requests
 
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.shortcuts import render, redirect
 
-from .forms import RecommendationForm, ImageUploadForm
+from .forms import RecommendationForm, ImageUploadForm, SpeechForm
 from .models import Recommendation
 
 
@@ -37,6 +41,64 @@ def _page_title(mode):
         "analysis": "이미지 분석",
         "control": "API 흐름 제어",
     }.get(mode, "입력 검증")
+
+
+# F712: 이미지 MIME 타입 -> 저장할 파일 확장자
+_IMAGE_EXTENSIONS = {
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+
+
+def _save_generated_image(recommendation, image_base64, mime_type):
+    """F712: base64 이미지를 디코딩해 media 폴더에 저장하고 URL을 반환한다.
+
+    저장에 실패하면 None을 반환하며, 이때 화면은 base64 인라인 방식으로 대체된다.
+    """
+    extension = _IMAGE_EXTENSIONS.get(mime_type, "jpg")
+
+    try:
+        raw = base64.b64decode(image_base64)
+    except (binascii.Error, ValueError):
+        return None
+
+    if not raw:
+        return None
+
+    recommendation.image.save(
+        f"{uuid.uuid4()}.{extension}",
+        ContentFile(raw),
+        save=True,
+    )
+
+    return recommendation.image.url
+
+
+def _score_answer(messages, answer):
+    """F709: 추천 답변의 적합도 점수를 받아온다.
+
+    점수 계산이 실패해도 추천 결과 자체는 보여줘야 하므로 (None, "")을 반환한다.
+    """
+    if not answer:
+        return None, ""
+
+    try:
+        response = _proxy_post(
+            "/chat/score",
+            {"messages": messages, "answer": answer},
+        )
+
+        if response.status_code != 200:
+            return None, ""
+
+        data = response.json()
+
+        return data.get("score"), data.get("reason", "")
+
+    except (requests.RequestException, ValueError):
+        return None, ""
 
 
 def recommend_form(request):
@@ -156,13 +218,19 @@ def recommend_flow(request):
         # F708: 텍스트 추천 API 호출
         if route == "/chat/completions":
 
+            # F710: 체크박스가 켜져 있으면 난이도에 따라 모델을 자동 선택한다.
+            use_tier_routing = (
+                request.POST.get("use_tier_routing") == "on"
+            )
+
             payload = {
                 "messages": [
                     {
                         "role": "user",
                         "content": prompt,
                     }
-                ]
+                ],
+                "use_tier_routing": use_tier_routing,
             }
 
             response = _proxy_post(
@@ -185,12 +253,27 @@ def recommend_flow(request):
                 )
 
             result = response.json()
+            answer = result.get("content", "")
+
+            # F709: 추천 생성 직후 점수를 계산해 Recommendation에 저장한다.
+            score, score_reason = _score_answer(
+                payload["messages"],
+                answer,
+            )
+
+            if score is not None:
+                recommendation.score = score
+                recommendation.reason = score_reason
+                recommendation.save(update_fields=["score", "reason"])
 
             return render(
                 request,
                 "recommend/recommend_flow.html",
                 {
-                    "result_text": result.get("content", ""),
+                    "result_text": answer,
+                    "model_used": result.get("model_used"),
+                    "score": score,
+                    "score_reason": score_reason,
                     "recommendation": recommendation,
                     "result_type": "text",
                     "route": route,
@@ -218,16 +301,24 @@ def recommend_flow(request):
             )
 
         image_result = response.json()
+        image_base64 = image_result.get("image_base64", "")
+        image_mime_type = image_result.get("image_mime_type", "image/jpeg")
+
+        # F712: base64 이미지를 파일로 저장하고 MEDIA_URL 주소로 제공한다.
+        image_url = _save_generated_image(
+            recommendation,
+            image_base64,
+            image_mime_type,
+        )
 
         return render(
             request,
             "recommend/recommend_flow.html",
             {
-                "image_base64": image_result.get("image_base64", ""),
-                "image_mime_type": image_result.get(
-                    "image_mime_type",
-                    "image/png",
-                ),
+                "image_url": image_url,
+                # 파일 저장에 실패한 경우에만 base64 인라인 표시로 대체
+                "image_base64": "" if image_url else image_base64,
+                "image_mime_type": image_mime_type,
                 "recommendation": recommendation,
                 "result_type": "image",
                 "route": route,
@@ -307,5 +398,63 @@ def image_analysis(request):
     return render(
         request,
         "recommend/upload_form.html",
+        {"form": form},
+    )
+
+
+def tts(request):
+    """F711: 텍스트를 FastAPI에 보내 음성(base64)으로 변환해 재생한다."""
+
+    if request.method == "POST":
+        form = SpeechForm(request.POST)
+
+        if form.is_valid():
+            speech = form.save()
+
+            try:
+                response = _proxy_post(
+                    "/generate-speech",
+                    {"text": speech.text},
+                )
+
+                if response.status_code == 403:
+                    return render(
+                        request,
+                        "recommend/rejected.html",
+                        status=403,
+                    )
+
+                if response.status_code != 200:
+                    return _error_response(
+                        request,
+                        response.status_code,
+                        response.text[:300],
+                    )
+
+                audio_data = response.json().get("audio_data", "")
+
+            except (requests.RequestException, ValueError) as exc:
+                return _error_response(
+                    request,
+                    None,
+                    str(exc),
+                )
+
+            return render(
+                request,
+                "recommend/result_audio.html",
+                {
+                    "form": form,
+                    "speech": speech,
+                    "audio_data": audio_data,
+                },
+            )
+
+    else:
+        form = SpeechForm()
+
+    return render(
+        request,
+        "recommend/result_audio.html",
         {"form": form},
     )

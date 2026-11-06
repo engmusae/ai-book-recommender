@@ -11,3 +11,13 @@ class Recommendation(models.Model):
 
     def __str__(self):
         return self.request_text[:50]
+
+
+class Speech(models.Model):
+    """F711: TTS로 변환할 텍스트 (오디오는 파일로 저장하지 않는다)."""
+
+    text = models.TextField(max_length=4000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.text[:50]

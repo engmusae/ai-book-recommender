@@ -1,6 +1,7 @@
 
 """FastAPI Proxy: Django만 이 서버를 호출하며 GMS_KEY는 이 서버에서만 사용한다."""
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -14,12 +15,16 @@ from schemas import (
     ChatGuardrailResponse,
     ChatRequest,
     ChatResponse,
+    ChatScoreRequest,
+    ChatScoreResponse,
     DecideRouteRequest,
     DecideRouteResponse,
     ImageAnalysisRequest,
     ImageAnalysisResponse,
     ImageGenerationRequest,
     ImageGenerationResponse,
+    SpeechRequest,
+    SpeechResponse,
 )
 
 # ==================================================
@@ -42,6 +47,8 @@ GMS_INTERACTIONS_URL = (
 )
 
 MODEL_NANO = "gpt-5-nano"
+MODEL_MINI = "gpt-5-mini"
+MODEL_TTS = "gpt-4o-mini-tts"
 MODEL_IMAGE = "gemini-3.1-flash-lite-image"
 
 HEADERS = {
@@ -363,6 +370,77 @@ def ensure_appropriate(prompt):
 
 
 # ==================================================
+# F710. 모델 등급 라우팅
+# ==================================================
+
+TIER_PROMPT = """
+당신은 도서 추천 요청의 난이도 분류기다.
+
+사용자 요청을 읽고 "simple" 또는 "complex" 중 하나로 분류한다.
+
+1. "simple"
+   - 장르나 주제만 간단히 언급한 짧은 요청
+   - 예: "소설 추천해줘", "가벼운 에세이 추천"
+
+2. "complex"
+   - 분위기, 상황, 감정, 독자 수준, 분량 등
+     여러 조건을 함께 제시한 요청
+   - 비교, 이유 설명, 맥락 이해가 필요한 요청
+   - 예: "비 오는 날 혼자 읽기 좋은, 위로가 되는 짧은 에세이"
+
+판단이 애매하면 "simple"로 분류한다.
+JSON 스키마에 맞는 결과만 반환한다.
+"""
+
+
+def decide_model_tier(prompt):
+    """요청 난이도를 gpt-5-nano로 판단해 'simple' 또는 'complex'를 반환"""
+
+    messages = [
+        {
+            "role": "developer",
+            "content": TIER_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": prompt,
+        },
+    ]
+
+    response_format = json_schema(
+        "tier_response",
+        {
+            "tier": {
+                "type": "string",
+                "enum": ["simple", "complex"],
+            }
+        },
+    )
+
+    answer = ask_gms(
+        messages,
+        MODEL_NANO,
+        response_format,
+    )
+
+    try:
+        tier = json.loads(answer)["tier"]
+
+        if tier not in ("simple", "complex"):
+            raise ValueError("unsupported tier")
+
+        return tier
+
+    except (ValueError, KeyError, TypeError) as exc:
+        print("[모델 등급 응답 해석 실패]", str(exc))
+
+        raise HTTPException(
+            status_code=503,
+            detail="model server error",
+        ) from exc
+
+
+# ==================================================
 # F702. 텍스트 추천
 # ==================================================
 
@@ -384,14 +462,112 @@ def chat_completions(request: ChatRequest):
 
     ensure_appropriate(user_text)
 
+    # F710: 등급 라우팅을 켠 경우에만 난이도에 따라 모델을 선택
+    model = MODEL_NANO
+
+    if request.use_tier_routing:
+        tier = decide_model_tier(user_text)
+
+        if tier == "complex":
+            model = MODEL_MINI
+
     content = ask_gms(
         request.messages,
-        MODEL_NANO,
+        model,
     )
 
     return {
         "content": content,
+        "model_used": model,
     }
+
+
+# ==================================================
+# F709. 텍스트 응답 점수 계산
+# ==================================================
+
+SCORE_PROMPT = """
+당신은 도서 추천 답변의 품질 평가자다.
+
+[사용자 요청]과 [AI 답변]을 보고, 답변이 사용자의 취향과
+요청 조건에 얼마나 적합한지 0~100점의 정수로 평가한다.
+
+평가 기준:
+- 요청한 조건(장르, 분위기, 분량 등)을 반영했는가
+- 추천 도서와 추천 이유가 구체적인가
+- 요청과 관련 없는 내용이 섞여 있지 않은가
+
+reason에는 점수의 근거를 한국어 1~2문장으로 간단히 적는다.
+JSON 스키마에 맞는 결과만 반환한다.
+"""
+
+
+@app.post(
+    "/api/v1/chat/score",
+    response_model=ChatScoreResponse,
+)
+def chat_score(request: ChatScoreRequest):
+
+    if not request.messages:
+        raise HTTPException(
+            status_code=422,
+            detail="messages must not be empty",
+        )
+
+    user_text = str(
+        request.messages[-1].get("content", "")
+    )
+
+    messages = [
+        {
+            "role": "developer",
+            "content": SCORE_PROMPT,
+        },
+        {
+            "role": "user",
+            "content": (
+                f"[사용자 요청]\n{user_text}\n\n"
+                f"[AI 답변]\n{request.answer}"
+            ),
+        },
+    ]
+
+    response_format = json_schema(
+        "score_response",
+        {
+            "score": {
+                "type": "integer",
+            },
+            "reason": {
+                "type": "string",
+            },
+        },
+    )
+
+    answer = ask_gms(
+        messages,
+        MODEL_NANO,
+        response_format,
+    )
+
+    try:
+        result = json.loads(answer)
+
+        # strict 스키마는 min/max를 지원하지 않으므로 직접 0~100으로 제한
+        score = max(0, min(100, int(result["score"])))
+
+        return {
+            "score": score,
+            "reason": str(result["reason"]),
+        }
+
+    except (ValueError, KeyError, TypeError) as exc:
+        print("[점수 응답 해석 실패]", str(exc))
+
+        raise HTTPException(
+            status_code=503,
+            detail="model server error",
+        ) from exc
 
 
 # ==================================================
@@ -577,4 +753,45 @@ def image_analysis(request: ImageAnalysisRequest):
 
     return {
         "content": content,
+    }
+
+
+# ==================================================
+# F711. TTS
+# ==================================================
+
+@app.post(
+    "/api/v1/generate-speech",
+    response_model=SpeechResponse,
+)
+def generate_speech(request: SpeechRequest):
+
+    if not request.text.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="text must not be empty",
+        )
+
+    response = gms_post(
+        "/audio/speech",
+        {
+            "model": MODEL_TTS,
+            "input": request.text,
+            "voice": "nova",
+            "response_format": "mp3",
+        },
+    )
+
+    if not response.content:
+        print("[TTS 응답 오류] 오디오 데이터가 비어 있습니다.")
+
+        raise HTTPException(
+            status_code=503,
+            detail="model server error",
+        )
+
+    return {
+        "audio_data": base64.b64encode(
+            response.content
+        ).decode("utf-8"),
     }

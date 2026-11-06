@@ -1,5 +1,30 @@
 {% extends "base.html" %}
-{% block title %}음성 결과{% endblock %}
+{% block title %}TTS | AI 도서 추천 서비스{% endblock %}
 {% block content %}
-<div class="page-card"><h2 class="h4">음성 결과</h2><audio controls src="data:audio/mp3;base64,{{ audio_data }}"></audio></div>
+<h1 class="page-heading">TTS</h1>
+<div class="two-col">
+  <section class="panel">
+    <h2>사용자 입력</h2>
+    <form method="post" action="{% url 'recommend:tts' %}">
+      {% csrf_token %}
+      <label class="field-label" for="{{ form.text.id_for_label }}">음성으로 변환할 텍스트</label>
+      {{ form.text }}
+      {% for error in form.text.errors %}
+        <div class="field-error">{{ error }}</div>
+      {% endfor %}
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">음성으로 변환</button>
+      </div>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>FastAPI 결과 (음성)</h2>
+    {% if audio_data %}
+      <audio controls style="width:100%" src="data:audio/mp3;base64,{{ audio_data }}"></audio>
+      <div class="small-note">오디오는 파일로 저장하지 않고 이 페이지 안에 직접 담아 재생합니다. (data URI)</div>
+    {% else %}
+      <p class="muted">텍스트를 입력하고 변환하면 여기에 재생 버튼이 표시됩니다.</p>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}

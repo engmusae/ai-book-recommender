@@ -11,6 +11,19 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     content: str
+    # F710: 실제로 답변을 생성한 모델명 (등급 라우팅 결과 확인용)
+    model_used: str | None = None
+
+
+# F709: 텍스트 응답 점수 계산
+class ChatScoreRequest(BaseModel):
+    messages: list[dict]
+    answer: str
+
+
+class ChatScoreResponse(BaseModel):
+    score: int
+    reason: str
 
 
 class ChatGuardrailRequest(BaseModel):
@@ -45,3 +58,12 @@ class ImageAnalysisRequest(BaseModel):
 
 class ImageAnalysisResponse(BaseModel):
     content: str
+
+
+# F711: TTS
+class SpeechRequest(BaseModel):
+    text: str
+
+
+class SpeechResponse(BaseModel):
+    audio_data: str
