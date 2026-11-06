@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}이미지 분석 | AI 도서 추천 서비스{% endblock %}
+{% block content %}
+<h1 class="page-heading">이미지 분석</h1>
+<div class="two-col">
+  <section class="panel">
+    <h2>이미지 분석 입력</h2>
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="field-label" for="{{ form.image.id_for_label }}">책 표지 이미지</label>
+        {{ form.image }}
+        {% for error in form.image.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="mb-2">
+        <label class="field-label" for="{{ form.question.id_for_label }}">분석 요청</label>
+        {{ form.question }}
+        {% for error in form.question.errors %}<div class="field-error">{{ error }}</div>{% endfor %}
+      </div>
+      <div class="actions"><button class="btn btn-primary" type="submit">표지 분석하기</button></div>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>이미지 분석 결과</h2>
+    <p class="muted">표지 이미지를 업로드하고 분석을 요청하면 이 영역에 제목·장르 추정과 비슷한 도서가 표시됩니다.</p>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}요청 거절 | AI 도서 추천 서비스{% endblock %}
+{% block content %}
+<h1 class="page-heading">응답 제어</h1>
+<div class="two-col">
+  <section class="panel"><h2>사용자 입력</h2><p class="muted">안전성 검사를 통과하지 못한 요청입니다.</p></section>
+  <section class="panel"><h2>결과</h2><div class="notice danger">요청이 거절되었습니다.<br>입력 검증 결과: 부적절한 요청 (HTTP 403)</div><p class="small-note">폭력·자해·혐오·성인 콘텐츠, 명백한 불법 행위 방법, 타인의 개인정보를 요구하는 요청은 처리할 수 없습니다.</p><div class="actions"><a class="btn btn-primary" href="{% url 'recommend:input' %}">다시 입력</a></div></section>
+</div>
+{% endblock %}

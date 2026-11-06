@@ -1,0 +1,161 @@
+
+{% extends "base.html" %}
+
+{% block title %}
+{{ page_title|default:"입력 검증" }} | AI 도서 추천 서비스
+{% endblock %}
+
+{% block content %}
+
+<h1 class="page-heading">
+  {{ page_title|default:"입력 검증" }}
+</h1>
+
+<div class="two-col">
+
+  <section class="panel" id="recommend-form">
+
+    <h2>
+      {% if page_title == "텍스트 추천" %}
+        텍스트 추천 입력
+      {% elif page_title == "이미지 생성" %}
+        이미지 생성 입력
+      {% elif page_title == "라우트 결정" %}
+        라우트 결정 입력
+      {% elif page_title == "응답 제어" %}
+        응답 제어 입력
+      {% elif page_title == "이미지 분석" %}
+        이미지 분석 입력
+      {% else %}
+        입력
+      {% endif %}
+    </h2>
+
+    <form method="post" action="{% url 'recommend:flow' %}">
+
+      {% csrf_token %}
+
+      <input
+        type="hidden"
+        name="mode"
+        value="{{ mode|default:'validation' }}"
+      >
+
+      <label
+        class="field-label"
+        for="{{ form.request_text.id_for_label }}"
+      >
+        읽고 싶은 책에 대해 알려주세요.
+      </label>
+
+      {{ form.request_text }}
+
+      {% for error in form.request_text.errors %}
+        <div class="field-error">
+          {{ error }}
+        </div>
+      {% endfor %}
+
+      {% if form.non_field_errors %}
+        <div class="field-error">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">
+          {% if mode == "route" %}
+            라우트 판단하기
+          {% else %}
+            요청 보내기
+          {% endif %}
+        </button>
+      </div>
+
+      <div class="notice">
+        이미지 생성은 토큰을 많이 사용합니다.
+        <br>
+        결과 확인용으로 한 번만 호출하고,
+        반복 호출은 피해 주세요.
+      </div>
+
+    </form>
+
+  </section>
+
+
+  <section class="panel" id="response-guide">
+
+    <h2>
+      {% if page_title == "텍스트 추천" %}
+        텍스트 추천 결과
+      {% elif page_title == "이미지 생성" %}
+        이미지 생성 결과
+      {% elif page_title == "라우트 결정" %}
+        라우트 결정 결과
+      {% elif page_title == "응답 제어" %}
+        응답 제어 결과
+      {% elif page_title == "이미지 분석" %}
+        이미지 분석 결과
+      {% else %}
+        결과
+      {% endif %}
+    </h2>
+
+    {% if route_result %}
+
+      <div class="result-box success">
+
+        <strong>판단된 route</strong>
+
+        <div class="result-text">
+          {{ route_result }}
+        </div>
+
+        {% if route_result == "/chat/completions" %}
+
+          <p class="mt-2 mb-0">
+            텍스트 추천 요청으로 판단했습니다.
+          </p>
+
+        {% elif route_result == "/images/generations" %}
+
+          <p class="mt-2 mb-0">
+            표지 이미지 생성 요청으로 판단했습니다.
+          </p>
+
+        {% endif %}
+
+      </div>
+
+    {% elif saved %}
+
+      <div class="result-box success">
+        입력 검증을 통과했습니다.
+        (저장된 번호: {{ recommendation.pk }})
+      </div>
+
+      <p class="result-text mt-2">
+        {{ recommendation.request_text }}
+      </p>
+
+    {% else %}
+
+      <p class="muted">
+        왼쪽에 입력하고 요청을 보내면
+        여기에 결과가 표시됩니다.
+      </p>
+
+      {% if mode == "route" %}
+        <p class="small-note">
+          예: “가벼운 소설 추천해줘” 또는 “책 표지 그려줘”
+        </p>
+      {% endif %}
+
+    {% endif %}
+
+  </section>
+
+</div>
+
+{% endblock %}

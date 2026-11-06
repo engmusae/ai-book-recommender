@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}음성 결과{% endblock %}
+{% block content %}
+<div class="page-card"><h2 class="h4">음성 결과</h2><audio controls src="data:audio/mp3;base64,{{ audio_data }}"></audio></div>
+{% endblock %}

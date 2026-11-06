@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}AI 추천 결과 | AI 도서 추천 서비스{% endblock %}
+{% block content %}
+<h1 class="page-heading">{% if result_type == 'image' %}이미지 생성 결과{% else %}텍스트 추천 결과{% endif %}</h1>
+<div class="two-col">
+  <section class="panel">
+    <h2>{% if result_type == 'image' %}이미지 생성 입력{% else %}텍스트 추천 입력{% endif %}</h2>
+    <div class="result-box">{{ recommendation.request_text }}</div>
+    <div class="actions"><a class="btn btn-outline-primary" href="{% url 'recommend:input' %}">← 다시 입력</a></div>
+  </section>
+  <section class="panel">
+    <h2>{% if result_type == 'image' %}이미지 생성 결과 (표지 이미지){% else %}텍스트 추천 결과{% endif %}</h2>
+    {% if result_type == 'image' and image_base64 %}
+      <p class="muted">요청에 맞춰 생성한 도서 표지 이미지입니다.</p>
+      <img class="cover-image" alt="AI가 생성한 도서 표지" src="data:{{ image_mime_type|default:'image/png' }};base64,{{ image_base64 }}">
+    {% elif result_text %}
+      <div class="result-text">{{ result_text }}</div>
+    {% else %}
+      <div class="notice danger">응답 내용이 비어 있습니다. FastAPI 터미널의 응답을 확인해 주세요.</div>
+    {% endif %}
+    <div class="actions"><a class="btn btn-outline-primary" href="{% url 'recommend:upload' %}">표지 분석하기</a></div>
+  </section>
+</div>
+{% endblock %}

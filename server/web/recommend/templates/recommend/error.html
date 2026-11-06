@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}서비스 응답 오류 | AI 도서 추천 서비스{% endblock %}
+{% block content %}
+<h1 class="page-heading">응답 제어</h1>
+<div class="two-col">
+  <section class="panel"><h2>사용자 입력</h2><p class="muted">요청 처리 중 모델 서버 응답을 확인하지 못했습니다.</p></section>
+  <section class="panel"><h2>결과</h2>
+    {% if status_code == 503 %}
+      <div class="notice">잠시 후 다시 시도해 주세요.<br>Proxy 서버 응답 코드: 503 — FastAPI 또는 모델 서버의 응답을 확인해 주세요.</div>
+    {% elif status_code %}
+      <div class="notice">Proxy 서버 응답 코드: {{ status_code }}</div>
+    {% else %}
+      <div class="notice">Django와 Proxy 서버의 연결을 확인해 주세요. FastAPI 서버가 실행 중인지 확인해 주세요.</div>
+    {% endif %}
+    {% if detail %}<details class="small-note"><summary>오류 상세</summary><pre class="text-wrap">{{ detail }}</pre></details>{% endif %}
+    <div class="actions"><a class="btn btn-primary" href="{% url 'recommend:input' %}">다시 시도</a></div>
+  </section>
+</div>
+{% endblock %}

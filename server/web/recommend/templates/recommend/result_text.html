@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}이미지 분석 결과 | AI 도서 추천 서비스{% endblock %}
+{% block content %}
+<h1 class="page-heading">이미지 분석 결과</h1>
+<div class="two-col">
+  <section class="panel">
+    <h2>사용자 입력</h2>
+    {% if image_data_uri %}<img class="cover-image" src="{{ image_data_uri }}" alt="분석한 책 표지">{% else %}<p class="muted">업로드한 이미지</p>{% endif %}
+    <div class="small-note">{{ question }}</div>
+    <div class="actions"><a class="btn btn-outline-primary" href="{% url 'recommend:upload' %}">← 다시 입력</a></div>
+  </section>
+  <section class="panel">
+    <h2>FastAPI 결과</h2>
+    <div class="result-text">{{ content }}</div>
+  </section>
+</div>
+{% endblock %}

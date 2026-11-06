@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}이미지 생성 결과{% endblock %}
+{% block content %}
+<div class="page-card">
+  <h2 class="h4">생성된 도서 표지</h2>
+  {% if image_base64 %}<img class="img-fluid" src="data:image/jpeg;base64,{{ image_base64 }}" alt="생성된 표지">{% endif %}
+</div>
+{% endblock %}
